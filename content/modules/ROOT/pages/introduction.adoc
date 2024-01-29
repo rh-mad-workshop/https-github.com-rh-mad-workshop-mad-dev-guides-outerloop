@@ -1,0 +1,14 @@
+= Introduction 
+:navtitle: Introduction
+
+_1 MINUTE EXERCISE_
+
+In this workshop you will learn how to promote your application code from Development to Production. 
+
+* **Continuous Integration/Continuous Delivery** (CI/CD) with OpenShift Pipelines
+* **GitOps** workflow with Argo CD
+
+In addition, you will learn how to enable **Service Mesh** capability on OpenShift for monitoring your applications 
+and how to use it for advanced deployment techniques.
+
+Let's start the workshop with the discovery of OpenShift and OpenShift Dev Spaces.

@@ -1,0 +1,287 @@
+:markup-in-source: verbatim,attributes,quotes
+:CHE_URL: http://devspaces.%APPS_HOSTNAME_SUFFIX%
+:GIT_URL: https://gitea-server-gitea.%APPS_HOSTNAME_SUFFIX%
+:GITOPS_URL: https://argocd-server-argocd.%APPS_HOSTNAME_SUFFIX%
+:USER_ID: %USER_ID%
+:OPENSHIFT_PASSWORD: %OPENSHIFT_PASSWORD%
+:OPENSHIFT_CONSOLE_URL: https://console-openshift-console.%APPS_HOSTNAME_SUFFIX%/topology/ns/cn-project{USER_ID}
+
+= Continuous Integration with OpenShift Pipelines
+:navtitle: Continuous Integration with OpenShift Pipelines
+
+_30 MINUTE EXERCISE_
+
+In this lab you will learn about deployment pipelines and you will create a pipeline to 
+automate the build of the Inventory service.
+
+[sidebar]
+.Continuous Integration
+--
+So far you have been building each service manually to OpenShift. Although 
+it's convenient for local development, it's an error-prone way of building software if 
+extended to test and production environments.
+
+Continuous Integration (CI) is a phase in the software development cycle where code from different team members 
+or different features are integrated together. This usually involves merging code (integration), 
+building the application (container) and carrying out basic tests all within an ephemeral environment.
+
+OpenShift simplifies building CI/CD Pipelines by integrating TektonCD into
+the platform and enables defining truly complex workflows directly from within OpenShift.
+--
+
+[#create_git_repository]
+== Create a Git Repository for Inventory Code
+
+The first step is to create a Git repository to store your source code. 
+You can use any Git server (e.g. GitHub, BitBucket, etc). For this lab we will use a 
+Gitea git server.
+
+`*Click on the 'Developer Repository' button below*`
+
+[link={GIT_URL}]
+[window=_blank, align="center"]
+[role='params-link']
+image::developer-repository-button.png[Developer Repository - Button, 300]
+
+Then, `*click on 'Sign In' and login via OpenShift as user{USER_ID}/{OPENSHIFT_PASSWORD}*`
+
+image::gitea-signin.png[Sign Up Gitea,700]
+
+Create a new repository called *'inventory-quarkus'*.
+`*Click on the '+' icon -> '+ New Repository'*` as below and enter the following values:
+
+image::gitea-create-repository.png[Create New Repository,900]
+
+.Inventory Repository
+[%header,cols=2*]
+|===
+|Parameter 
+|Value
+
+|Repository Name*
+|inventory-quarkus
+
+|===
+
+`*Click on 'Create Repository' button*`.
+
+The Git repository is created now. 
+
+[#push_inventory_code]
+== Push Inventory Code to the Git Repository
+
+Now that you have a Git repository for the Inventory service, you should push your local source code into this Git repository.
+
+
+[tabs, subs="attributes+,+macros"]
+====
+
+IDE Task::
++
+-- 
+`*Click on 'Terminal' -> 'Run Task...' ->  'devfile: Inventory - Commit'*`
+
+image::che-runtask.png[Che - RunTask, 600]
+--
+
+CLI::
++
+--
+`*Execute the following commands in the terminal window*`
+
+[source,shell,subs="{markup-in-source}",role=copypaste]
+----
+cd /projects/workshop/labs/inventory-quarkus
+git init
+git remote add origin http://gitea-server.gitea.svc:3000/user{USER_ID}/inventory-quarkus.git
+git add *
+git commit -m "Initial"
+git push http://user{USER_ID}:openshift@gitea-server.gitea.svc:3000/user{USER_ID}/inventory-quarkus.git
+----
+
+NOTE: To open a terminal window, `*click on 'Terminal' -> 'New Terminal'*`
+
+--
+====
+
+The output should be as follows:
+
+[source,shell,subs="{markup-in-source}"]
+----
+Initialized empty Git repository in /projects/workshop/labs/inventory-quarkus/.git/
+[master (root-commit) f7b9db7] Initial
+ 12 files changed, 831 insertions(+)
+ [...]
+Enumerating objects: 29, done.
+Counting objects: 100% (29/29), done.
+Delta compression using up to 16 threads.
+Compressing objects: 100% (20/20), done.
+Writing objects: 100% (29/29), 10.76 KiB | 3.59 MiB/s, done.
+Total 29 (delta 1), reused 0 (delta 0)
+remote: . Processing 1 references
+remote: Processed 1 references in total
+To http://gitea-server.gitea.svc:3000/user{USER_ID}/inventory-quarkus.git
+ * [new branch]      master -> master
+----
+
+Once done, in your {GIT_URL}/user{USER_ID}/inventory-quarkus[Git Repository^, role='params-link'], `*refresh the page of your 'inventory-quarkus' repository*`. You should 
+see the project files in the repository.
+
+image::cd-gitea-inventory-repo.png[Inventory Repository,900]
+
+[#what_is_openshift_pipelines]
+== What is OpenShift Pipelines?
+
+[sidebar]
+--
+image::tekton-logo.png[Tekton, 300]
+
+OpenShift Pipelines is a cloud-native, continuous integration and continuous delivery (CI/CD) solution 
+for building pipelines based on https://tekton.dev/[Tekton^] project.
+
+* Standard CI/CD pipeline definition based on Tekton
+* Build images with Kubernetes tools such as S2I, Buildah, Buildpacks, Kaniko, etc
+* Deploy applications to multiple platforms such as Kubernetes, serverless and VMs
+* Easy to extend and integrate with existing tools
+* Scale pipelines on-demand
+* Portable across any Kubernetes platform
+* Designed for microservices and decentralized teams
+* Integrated with the OpenShift Developer Console
+
+https://tekton.dev/[Tekton^] provides Kubernetes-style resources for creating serverless 
+CI/CD-style pipelines on Kubernetes.
+
+The custom resources needed to define a pipeline are:
+
+* **Task** - a reusable, loosely coupled number of steps that perform a specific task (e.g., building a container image)
+* **Pipeline** - the definition of the pipeline and the **Task** that it should perform
+* **PipelineResource** - inputs (e.g., git repository) and outputs (e.g., image registry) to and out of a **Pipeline** or **Task**
+* **TaskRun** - the result of running an instance of **Task**
+* **PipelineRun** - the result of running an instance of **Pipeline**, which includes a number of **TaskRun**
+
+image::tekton-architecture.png[Tekton Architecture, 600]
+
+--
+
+[#switch_to_staging_environment]
+== Switch to the Staging Environment
+
+First, let's switch your OpenShift Console to your Staging Environement i.e 'cn-project{USER_ID}'.
+
+In the {OPENSHIFT_CONSOLE_URL}[OpenShift Web Console^,role='params-link'], from the **Developer view**,
+`*click on 'Topology' then select your 'cn-project{USER_ID}'*`.
+
+image::openshift-staging-project.png[OpenShift - Staging Project, 700]
+
+[#create_pipeline]
+== Create a Pipeline
+
+A **Pipeline** defines a number of **Task** that should be executed and how they interact 
+with each other via **Workspace**. Let's define and configure these different components.
+
+In the {OPENSHIFT_CONSOLE_URL}[OpenShift Web Console^,role='params-link'], from the **Developer view**,
+`*click on 'Pipelines' -> 'Create Pipeline'*`.
+
+image::openshift-create-pipeline.png[OpenShift - Create Pipeline, 700]
+
+In the "Pipeline Builder" page, `*specify 'inventory-pipeline' as Name*`
+
+image::openshift-add-pipeline-name.png[OpenShift - Pipeline Name, 400]
+
+`*Scroll down to the 'Workspaces' section and define a Workspace called 'shared-workspace'*`
+
+image::openshift-add-pipeline-workspace.png[OpenShift - Pipeline Workspace, 600]
+
+`*Scroll up to the 'Tasks' section then click Add task.*`
+
+image::openshift-add-pipeline-task.png[OpenShift - Add task, 600]
+
+`*Start typing 'git-' next to the (+) and select 'git-clone'*`. 
+There are several options to choose from, look out for the *Red Hat* one. `*Then hit Add.*`
+
+image::openshift-add-git-clone-task.png[OpenShift - Add Git Clone Task, 500]
+
+`*Click on the newly created 'git-clone' task and enter the following configuration*`:
+
+.git-clone cluster task
+[%header,cols="30%,70%"]
+|===
+|Parameter 
+|Value
+
+|Display Name
+|git-clone
+
+|url
+|\http://gitea-server.gitea.svc:3000/user{USER_ID}/inventory-quarkus.git
+
+|Workspaces output
+|shared-workspace
+
+|===
+
+Once done, let's add another task. `*Click on the blue plus icon at the right hand side of the 'git-clone' task*`
+
+image::openshift-add-task.png[OpenShift - Add task, 500]
+
+`*Then click on 'Add task'*` and as before `*next to the (+) type 's2i-java'*` When you see the *Red Hat* one `*select and add the 's2i-java' task*`
+
+`*Click on the newly created 's2i-java' task and enter the following configuration*`:
+
+.s2i-java cluster task
+[%header,cols="30%,70%"]
+|===
+|Parameter 
+|Value
+
+|Display Name
+|s2i-java
+
+|TLSVERIFY
+|false
+
+|MAVEN_MIRROR_URL
+|\http://nexus.opentlc-shared.svc:8081/repository/maven-all-public
+
+|Image*
+|image-registry.openshift-image-registry.svc:5000/cn-project{USER_ID}/inventory-coolstore
+
+|Workspaces source
+|shared-workspace
+
+|===
+
+Once done, `*click on 'Create'*`. Your simple Pipeline is now created.
+
+image::openshift-ci-pipeline.png[OpenShift - CI Pipeline, 700]
+
+== Run the Pipeline
+
+Now that your pipeline is created and configured, let's run it.
+
+In the {OPENSHIFT_CONSOLE_URL}[OpenShift Web Console^,role='params-link'], from the **Developer view**,
+`*click on 'Pipelines' -> 'PL inventory-pipeline' -> 'Actions' -> 'Start'*`
+
+image::openshift-start-inventory-pipeline.png[OpenShift Start Inventory Pipeline,900]
+
+`*Enter the following parameters then click on 'Start'*`
+
+.Pipeline Parameters
+[%header,cols=2*]
+|===
+|Name 
+|Value
+
+|shared-workspace
+|VolumeClaimTemplate
+
+|===
+
+image::openshift-inventory-pipeline-parameters.png[OpenShift Inventory Pipeline Parameters,600]
+
+Congratulations!! You have created and run your first **CI Pipeline on OpenShift**!!
+
+image::openshift-inventory-pipeline-run.png[OpenShift Inventory Pipeline Run,500]
+
+
+Well done! You are ready for the next lab.
